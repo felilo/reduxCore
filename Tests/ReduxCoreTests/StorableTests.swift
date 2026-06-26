@@ -604,8 +604,8 @@ struct StorableTests {
         #expect(m2.didProcess)
     }
 
-    @Test("two concurrent dispatchAsync calls serialize reducers and run middleware in parallel")
-    func dispatchAsyncConcurrentCallsSerializeReducers() async {
+    @Test("two sequential dispatchAsync calls with multiple middleware accumulate state correctly")
+    func dispatchAsyncSequentialCallsWithMultipleMiddleware() async {
         let spy1 = SpyMiddleware()
         let spy2 = SpyMiddleware()
         let store = Storable(
@@ -613,18 +613,66 @@ struct StorableTests {
             middleware: [AnyMiddleware(spy1), AnyMiddleware(spy2)]
         )
 
-        // Fire two dispatchAsync calls concurrently from separate Tasks.
-        // Reducers must serialize (MainActor), middleware must all complete
-        // before each call returns, and state must reflect both dispatches.
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in await store.dispatchAsync(.increment) }
-            group.addTask { @MainActor in await store.dispatchAsync(.increment) }
-        }
+        await store.dispatchAsync(.increment)
+        await store.dispatchAsync(.decrement)
 
-        // Both reducers ran → count == 2
-        #expect(store.state.count == 2)
+        // count == 0 only if both reducers ran (increment → 1, decrement → 0)
+        #expect(store.state.count == 0)
 
-        // Both middleware instances saw both actions (2 dispatches × 2 middleware = 4 calls total)
+        // Both middleware instances saw both dispatches (2 × 2 = 4 total calls)
+        #expect(spy1.receivedActions == [.increment, .decrement])
+        #expect(spy2.receivedActions == [.increment, .decrement])
+    }
+
+    @Test("two different actions fired with dispatchAsync are processed in order by all middleware")
+    func dispatchAsyncDifferentActionsDeliveredInOrder() async {
+        let spy1 = SpyMiddleware()
+        let spy2 = SpyMiddleware()
+        let store = Storable(
+            reducer: TestReducer(),
+            middleware: [AnyMiddleware(spy1), AnyMiddleware(spy2)]
+        )
+
+        await store.dispatchAsync(.increment)
+        await store.dispatchAsync(.setValue(10))
+
+        // Reducer applied both: 0 → 1 → 10
+        #expect(store.state.count == 10)
+
+        // Both middleware received actions in the correct order
+        #expect(spy1.receivedActions == [.increment, .setValue(10)])
+        #expect(spy2.receivedActions == [.increment, .setValue(10)])
+    }
+
+    @Test("two different dispatchAsync calls fired concurrently each complete with their own effect")
+    func dispatchAsyncTwoConcurrentDifferentActionsEachComplete() async {
+        let spy1 = SpyMiddleware()
+        let spy2 = SpyMiddleware()
+        let store = Storable(
+            reducer: TestReducer(),
+            middleware: [AnyMiddleware(spy1), AnyMiddleware(spy2)]
+        )
+
+        // Fire both at the same time — MainActor serializes reducers, but
+        // both dispatchAsync calls must complete before continuing.
+        // Using .increment + .decrement: regardless of execution order,
+        // count == 0 only if BOTH reducers ran. 1 or -1 means one was dropped.
+        async let first: Void = store.dispatchAsync(.increment)
+        async let second: Void = store.dispatchAsync(.decrement)
+        _ = await (first, second)
+
+        // Only possible if both reducers ran (±1 cancel out)
+        #expect(store.state.count == 0)
+
+        // First event: .increment was processed by all middleware
+        #expect(spy1.receivedActions.contains(.increment))
+        #expect(spy2.receivedActions.contains(.increment))
+
+        // Second event: .decrement was processed by all middleware
+        #expect(spy1.receivedActions.contains(.decrement))
+        #expect(spy2.receivedActions.contains(.decrement))
+
+        // Total: 2 actions × 2 middleware = 4 calls
         #expect(spy1.receivedActions.count == 2)
         #expect(spy2.receivedActions.count == 2)
     }
