@@ -161,6 +161,16 @@ public struct StoreViewMacro: MemberMacro {
             accessPrefix = ""
         }
 
+        // --- Collect optional cycle-detection arguments forwarded to StoreContainerView ---
+        // Only include an argument in the generated call when it was explicitly provided by
+        // the user — omitting it lets StoreContainerView fall back to its own defaults.
+        let optionalParamLabels = ["maxDispatchDepth", "maxActionFrequency", "cycleWindow"]
+        let extraParams = optionalParamLabels.compactMap { label -> String? in
+            guard let arg = args.first(where: { $0.label?.text == label }) else { return nil }
+            return "        \(label): \(arg.expression.trimmed),"
+        }.joined(separator: "\n")
+        let extraParamsLine = extraParams.isEmpty ? "" : "\n\(extraParams)"
+
         // --- Synthesise `var body: some View { ... }` ---
         // `middleware` and `content` are resolved from `self` — the screen declares them.
         // The closure wrapper is required because `content(store:)` has a labelled parameter,
@@ -169,7 +179,7 @@ public struct StoreViewMacro: MemberMacro {
             \(raw: accessPrefix)var body: some View {
                 StoreContainerView(
                     reducer: \(reducerExpr),
-                    middleware: middleware,
+                    middleware: middleware,\(raw: extraParamsLine)
                     content: { store in content(store: store) }
                 )
             }

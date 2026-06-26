@@ -156,6 +156,129 @@ final class StoreViewMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Optional cycle-detection arguments
+
+    func testOptionalArgs_singleArg_forwardsMaxActionFrequency() {
+        assertMacroExpansion(
+            """
+            @StoreView(reducer: HomeReducer(), maxActionFrequency: 50)
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+            }
+            """,
+            expandedSource: """
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+
+                typealias Store = ObservableStore<HomeReducer>
+
+                typealias Middleware = AnyMiddleware<HomeReducer.Action, HomeReducer.State>
+
+                typealias MiddlewareResultBuilder = MiddlewareBuilder<HomeReducer.Action, HomeReducer.State>
+
+                var body: some View {
+                    StoreContainerView(
+                        reducer: HomeReducer(),
+                        middleware: middleware,
+                        maxActionFrequency: 50,
+                        content: { store in
+                            content(store: store)
+                        }
+                    )
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testOptionalArgs_allThreeArgs_forwardsAllCycleDetectionParams() {
+        assertMacroExpansion(
+            """
+            @StoreView(reducer: HomeReducer(), maxDispatchDepth: 10, maxActionFrequency: 50, cycleWindow: .seconds(2))
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+            }
+            """,
+            expandedSource: """
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+
+                typealias Store = ObservableStore<HomeReducer>
+
+                typealias Middleware = AnyMiddleware<HomeReducer.Action, HomeReducer.State>
+
+                typealias MiddlewareResultBuilder = MiddlewareBuilder<HomeReducer.Action, HomeReducer.State>
+
+                var body: some View {
+                    StoreContainerView(
+                        reducer: HomeReducer(),
+                        middleware: middleware,
+                        maxDispatchDepth: 10,
+                        maxActionFrequency: 50,
+                        cycleWindow: .seconds(2),
+                        content: { store in
+                            content(store: store)
+                        }
+                    )
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testOptionalArgs_absent_generatesNoExtraParams() {
+        assertMacroExpansion(
+            """
+            @StoreView(reducer: HomeReducer())
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+            }
+            """,
+            expandedSource: """
+            struct HomeScreen: View {
+                var middleware: [any MiddlewareType<HomeAction, HomeState>] { [] }
+                func content(_ store: ObservableStore<HomeReducer>) -> some View {
+                    Text("Hello")
+                }
+
+                typealias Store = ObservableStore<HomeReducer>
+
+                typealias Middleware = AnyMiddleware<HomeReducer.Action, HomeReducer.State>
+
+                typealias MiddlewareResultBuilder = MiddlewareBuilder<HomeReducer.Action, HomeReducer.State>
+
+                var body: some View {
+                    StoreContainerView(
+                        reducer: HomeReducer(),
+                        middleware: middleware,
+                        content: { store in
+                            content(store: store)
+                        }
+                    )
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     // MARK: - Error: missing reducer: label
 
     func testError_missingReducerLabel_producesError() {

@@ -95,7 +95,7 @@ struct FeedReducer: ReducerType {
 }
 
 // Correct — middleware loads the user and dispatches it into state
-final class FeedMiddleware: MiddlewareType, @unchecked Sendable {
+struct FeedMiddleware: MiddlewareType, Sendable {
     let userRepo: UserRepository
 
     func process(action: FeedAction, state: FeedState, dispatch: ...) async {

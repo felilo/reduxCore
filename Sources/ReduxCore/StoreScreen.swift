@@ -68,14 +68,23 @@ import SwiftUI
 /// ```
 ///
 /// - Parameter reducer: The reducer type or an instance of a `ReducerType`.
+/// - Parameter maxDispatchDepth: Maximum synchronous re-entrant dispatch depth before the cycle guard breaks the chain. Default: `.max` (unlimited). Active only in `DEBUG` builds.
+/// - Parameter maxActionFrequency: Maximum times the same action may be dispatched within `cycleWindow` before a warning is logged. Pass `0` to disable. Default: `20`. Active only in `DEBUG` builds.
+/// - Parameter cycleWindow: Time window used by `maxActionFrequency`. Default: `.seconds(1)`. Active only in `DEBUG` builds.
 @attached(member, names: named(body), named(Store), named(Middleware), named(MiddlewareResultBuilder))
 public macro StoreView<R: ReducerType>(
-    reducer: R
+    reducer: R,
+    maxDispatchDepth: Int = .max,
+    maxActionFrequency: Int = 20,
+    cycleWindow: Duration = .seconds(1)
 ) = #externalMacro(module: "ReduxCoreMacros", type: "StoreViewMacro")
 
 /// Overload that accepts a metatype — `@StoreView(reducer: HomeReducer.self)`.
 /// The macro calls `init()` on the type when generating the `body`.
 @attached(member, names: named(body), named(Store), named(Middleware), named(MiddlewareResultBuilder))
 public macro StoreView<R: ReducerType>(
-    reducer: R.Type
+    reducer: R.Type,
+    maxDispatchDepth: Int = .max,
+    maxActionFrequency: Int = 20,
+    cycleWindow: Duration = .seconds(1)
 ) = #externalMacro(module: "ReduxCoreMacros", type: "StoreViewMacro")
