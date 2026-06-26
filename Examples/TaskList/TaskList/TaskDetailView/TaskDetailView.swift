@@ -25,7 +25,11 @@
 import SwiftUI
 import ReduxCore
 
-@StoreView(reducer: TaskDetailReducer.self)
+@StoreView(
+    reducer: TaskDetailReducer.self,
+    maxActionFrequency: 100,   // warn after 100 dispatches (default: 20)
+    cycleWindow: .seconds(2)
+)
 struct TaskDetailView: View {
 
     let initialTask: TaskItem
