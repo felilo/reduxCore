@@ -311,23 +311,71 @@ struct StorableTests {
 
     // MARK: - Dispatch depth limit
 
-    @Test("dispatch is blocked when maxDispatchDepth is exceeded")
-    func dispatchDepthLimitPreventsInfiniteLoop() async throws {
-        // Middleware always re-dispatches a different action → would loop forever
-        // without an explicit depth limit.
-        let passthrough = PassthroughMiddleware(response: .decrement)
+    @Test("depth limit blocks synchronous re-entrant dispatch via onStateChange")
+    func dispatchDepthLimitPreventsInfiniteLoop() {
+        // Sync re-entrancy: onStateChange dispatches again from within didSet.
+        // This is the only scenario where sync depth detection is relevant —
+        // middleware-driven dispatch is async and is handled by frequency detection.
+        var reentrantCount = 0
         let store = Storable(
             reducer: TestReducer(),
-            middleware: [AnyMiddleware(passthrough)],
-            maxDispatchDepth: 3
+            maxDispatchDepth: 3,
+            maxActionFrequency: 1
         )
+        store.onStateChange = { [weak store] _ in
+            reentrantCount += 1
+            guard reentrantCount <= 10 else { return }  // safety net for broken impl
+            store?.dispatch(.increment)
+        }
         store.dispatch(.increment)
+        // depth 1: count = 1, depth 2: count = 2, depth 3: count = 3
+        // depth 4 → blocked. Final count == 3, reentrantCount == 3.
+        #expect(store.state.count == 3)
+        #expect(reentrantCount == 3)
+    }
 
-        try await Task.sleep(for: .milliseconds(200))
+    @Test("depth limit works independently of maxActionFrequency")
+    func depthLimitIsIndependentOfMaxActionFrequency() {
+        // BUG: handlerSyncCycleDetection gates both detectors behind `maxActionFrequency > 0`.
+        // When maxActionFrequency == 0, sync depth detection is silently disabled.
+        var reentrantCount = 0
+        let store = Storable(
+            reducer: TestReducer(),
+            maxDispatchDepth: 2,
+            maxActionFrequency: 0  // frequency detection explicitly off
+        )
+        store.onStateChange = { [weak store] _ in
+            reentrantCount += 1
+            guard reentrantCount <= 10 else { return }
+            store?.dispatch(.increment)
+        }
+        store.dispatch(.increment)
+        // With depth limit 2: count == 2, reentrantCount == 2
+        // BUG: depth detection never fires → safety net kicks in → count == 11
+        #expect(store.state.count == 2)
+        #expect(reentrantCount == 2)
+    }
 
-        // count should be capped by the depth limit, not go to -∞
-        #expect(store.state.count > Int.min)
-        #expect(store.state.count >= -3)
+    @Test("depth limit actually prevents the reducer from running when exceeded")
+    func depthLimitActuallyBlocksReducer() {
+        // BUG: handlerSyncCycleDetection returns early but dispatch() continues
+        // and calls reducer.reduce after the guard — the reducer still runs.
+        var reentrantCount = 0
+        let store = Storable(
+            reducer: TestReducer(),
+            maxDispatchDepth: 2,
+            maxActionFrequency: 1
+        )
+        store.onStateChange = { [weak store] _ in
+            reentrantCount += 1
+            guard reentrantCount <= 10 else { return }
+            store?.dispatch(.increment)
+        }
+        store.dispatch(.increment)
+        // Expected after fix: count == 2, reentrantCount == 2
+        // BUG: defer in helper resets depth before re-entry → count reaches safety limit
+        #expect(store.state.count == 2)
+        #expect(reentrantCount == 2)
     }
 
     @Test("default maxDispatchDepth is unlimited")
@@ -338,6 +386,38 @@ struct StorableTests {
             store.dispatch(.increment)
         }
         #expect(store.state.count == 100)
+    }
+
+    // MARK: - Post-reducer state verification
+
+    @Test("middleware receives post-reducer state, not pre-reducer state")
+    func middlewareReceivesPostReducerState() async throws {
+        let spy = SpyMiddleware()
+        let store = Storable(
+            reducer: TestReducer(),
+            middleware: [AnyMiddleware(spy)]
+        )
+        // Pre-reducer: count = 0. .setValue(42) makes it 42 post-reducer.
+        store.dispatch(.setValue(42))
+        try await Task.sleep(for: .milliseconds(50))
+
+        // If middleware ran before the reducer, count would be 0.
+        // It is 42 → reducer ran first, then middleware received the updated state.
+        #expect(spy.receivedStates.first?.count == 42)
+    }
+
+    @Test("middleware receives pre-reducer state of 0 before setValue(42) is applied")
+    func middlewareDoesNotReceivePreReducerState() async throws {
+        let spy = SpyMiddleware()
+        let store = Storable(
+            reducer: TestReducer(),
+            middleware: [AnyMiddleware(spy)]
+        )
+        store.dispatch(.setValue(42))
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Pre-reducer value was 0. Middleware must NOT have received 0 — it received 42.
+        #expect(spy.receivedStates.first?.count != 0)
     }
 
     // MARK: - deinit cancellation (Step 5)

@@ -124,9 +124,18 @@ where TReducer.Action: Equatable & Sendable, TReducer.State: Equatable & Sendabl
     }
     
     public func dispatch(_ action: TReducer.Action) {
-        // Async cycle detection: warn if the same action fires too rapidly.
-        
-        handlerSyncCycleDetection(with: action)
+#if DEBUG
+        // Sync depth detection: limits re-entrant chains such as onStateChange → dispatch.
+        // The defer must live here in dispatch (not in a helper) so the counter stays
+        // elevated throughout the entire synchronous re-entrant call stack.
+        currentDispatchDepth += 1
+        defer { currentDispatchDepth -= 1 }
+        guard currentDispatchDepth <= maxDispatchDepth else {
+            print("[ReduxCore] ⚠️ Max dispatch depth (\(maxDispatchDepth)) exceeded. Breaking potential cycle for action: \(action)")
+            return
+        }
+        detectAsyncCycle(action)
+#endif
         // Reduce synchronously — state is mutated in place on the main actor.
         reducer.reduce(action: action, state: &state)
         
@@ -199,7 +208,9 @@ where TReducer.Action: Equatable & Sendable, TReducer.State: Equatable & Sendabl
     /// Prints a warning when the same action exceeds `maxActionFrequency`, which
     /// indicates an async middleware loop (e.g. A dispatches B, B dispatches A).
     /// This is purely diagnostic — it never blocks or drops a dispatch.
+    /// No-ops when `maxActionFrequency` is 0 (detection disabled).
     private func detectAsyncCycle(_ action: TReducer.Action) {
+        guard maxActionFrequency > 0 else { return }
         let key = String(describing: action)
         let now = ContinuousClock.now
         
@@ -212,20 +223,5 @@ where TReducer.Action: Equatable & Sendable, TReducer.State: Equatable & Sendabl
         } else {
             dispatchFrequency[key] = (1, now)
         }
-    }
-    
-    private func handlerSyncCycleDetection(with action: TReducer.Action) {
-#if DEBUG
-        if maxActionFrequency > 0 {
-            detectAsyncCycle(action)
-            // Sync cycle detection: break dispatch chains that exceed the configured depth.
-            currentDispatchDepth += 1
-            defer { currentDispatchDepth -= 1 }
-            
-            guard currentDispatchDepth <= maxDispatchDepth else {
-                return print("[ReduxCore] ⚠️ Max dispatch depth (\(maxDispatchDepth)) exceeded. Breaking potential cycle for action: \(action)")
-            }
-        }
-#endif
     }
 }

@@ -24,12 +24,18 @@
 
 // MARK: - MiddlewareType
 
-/// A side-effect processor in the Redux pipeline.
+/// A post-reducer, parallel side-effect processor in the Redux pipeline.
 ///
-/// Middlewares receive every dispatched action and the current state.
-/// To produce a result (e.g. after a network call), dispatch a new action
-/// via the `next` closure. The original action has already been reduced
-/// before `process` is called.
+/// `process` is called **after** the reducer has already applied the action to state —
+/// the `state` parameter always reflects the updated value.
+///
+/// All registered middleware run **concurrently** via `withTaskGroup`. There is no
+/// sequential chain: calling `dispatch` does not pass control to the next middleware,
+/// it schedules a brand-new action through the full Redux cycle (reducer → middleware).
+///
+/// To trigger a follow-up action (e.g. after a network call), call `dispatch` with
+/// a *different* action. Calling `dispatch` with the same action that triggered
+/// `process` is a no-op — it is silently filtered to prevent trivial loops.
 public protocol MiddlewareType<Action, State>: Sendable {
     associatedtype Action
     associatedtype State
@@ -37,7 +43,7 @@ public protocol MiddlewareType<Action, State>: Sendable {
     func process(
         action: Action,
         state: State,
-        next: @escaping @Sendable (Action) async -> Void
+        dispatch: @escaping @Sendable (Action) async -> Void
     ) async
 }
 
@@ -128,16 +134,16 @@ public final class AnyMiddleware<Action, State>: @unchecked Sendable {
     private let _handler: @Sendable (Action, State, @escaping @Sendable (Action) async -> Void) async -> Void
 
     public init<M: MiddlewareType>(_ middleware: M) where M.Action == Action, M.State == State {
-        self._handler = { action, state, next in
-            await middleware.process(action: action, state: state, next: next)
+        self._handler = { action, state, dispatch in
+            await middleware.process(action: action, state: state, dispatch: dispatch)
         }
     }
 
     public func process(
         action: Action,
         state: State,
-        next: @escaping @Sendable (Action) async -> Void
+        dispatch: @escaping @Sendable (Action) async -> Void
     ) async {
-        await _handler(action, state, next)
+        await _handler(action, state, dispatch)
     }
 }

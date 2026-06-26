@@ -111,14 +111,14 @@ final class SpyMiddleware: MiddlewareType, Sendable {
     func process(
         action: TestAction,
         state: TestState,
-        next: @escaping @Sendable (TestAction) async -> Void
+        dispatch: @escaping @Sendable (TestAction) async -> Void
     ) async {
         lock.withLock {
             $0.receivedActions.append(action)
             $0.receivedStates.append(state)
         }
         if let nextAction {
-            await next(nextAction)
+            await dispatch(nextAction)
         }
     }
 }
@@ -131,9 +131,9 @@ struct PassthroughMiddleware: MiddlewareType, Sendable {
     func process(
         action: TestAction,
         state: TestState,
-        next: @escaping @Sendable (TestAction) async -> Void
+        dispatch: @escaping @Sendable (TestAction) async -> Void
     ) async {
-        await next(response)
+        await dispatch(response)
     }
 }
 
@@ -155,7 +155,7 @@ final class AsyncMiddleware: MiddlewareType, Sendable {
     func process(
         action: TestAction,
         state: TestState,
-        next: @escaping @Sendable (TestAction) async -> Void
+        dispatch: @escaping @Sendable (TestAction) async -> Void
     ) async {
         do {
             try await Task.sleep(for: delay)
@@ -166,7 +166,7 @@ final class AsyncMiddleware: MiddlewareType, Sendable {
         guard !Task.isCancelled else { return }
         _didProcess.withLock { $0 = true }
         if let nextAction {
-            await next(nextAction)
+            await dispatch(nextAction)
         }
     }
 }
