@@ -151,12 +151,12 @@ struct TaskMiddleware: MiddlewareType, Sendable {
     func process(
         action: TaskAction,
         state: TaskState,
-        next: @escaping @concurrent @Sendable (TaskAction) async -> Void
+        dispatch: @escaping DispatchClosure<TaskAction>
     ) async {
         switch action {
 
         case .appeared:
-            await fetchTasks(next: next)
+            await fetchTasks(dispatch: dispatch)
 
         case .searchChanged:
             await taskManager.run(key: "search") {
@@ -165,23 +165,23 @@ struct TaskMiddleware: MiddlewareType, Sendable {
                 } catch {
                     return
                 }
-                await self.fetchTasks(next: next)
+                await self.fetchTasks(dispatch: dispatch)
             }
 
         case .createTapped(let title):
             do {
                 let task = try await api.createTask(title: title)
-                await next(.taskCreated(task))
+                await dispatch(.taskCreated(task))
             } catch {
-                await next(.failed(error.localizedDescription))
+                await dispatch(.failed(error.localizedDescription))
             }
 
         case .deleteTapped(let id):
             do {
                 try await api.deleteTask(id: id)
-                await next(.taskDeleted(id))
+                await dispatch(.taskDeleted(id))
             } catch {
-                await next(.failed(error.localizedDescription))
+                await dispatch(.failed(error.localizedDescription))
             }
 
         default:
@@ -189,13 +189,13 @@ struct TaskMiddleware: MiddlewareType, Sendable {
         }
     }
 
-    private func fetchTasks(next: @escaping @Sendable (TaskAction) async -> Void) async {
+    private func fetchTasks(dispatch: @escaping DispatchClosure<TaskAction>) async {
         do {
             let tasks = try await api.fetchTasks()
-            await next(.tasksLoaded(tasks))
+            await dispatch(.tasksLoaded(tasks))
         } catch {
             guard !(error is CancellationError) else { return }
-            await next(.failed(error.localizedDescription))
+            await dispatch(.failed(error.localizedDescription))
         }
     }
 }
@@ -241,7 +241,7 @@ struct AnalyticsMiddleware: MiddlewareType, Sendable {
     func process(
         action: TaskAction,
         state: TaskState,
-        next: @escaping @concurrent @Sendable (TaskAction) async -> Void
+        dispatch: @escaping DispatchClosure<TaskAction>
     ) async {
         switch action {
         case .appeared:
@@ -257,7 +257,7 @@ struct AnalyticsMiddleware: MiddlewareType, Sendable {
         default:
             break
         }
-        // Analytics middleware never calls next() — it has no follow-up actions to dispatch.
+        // Analytics middleware never calls dispatch() — it has no follow-up actions to schedule.
     }
 }
 ```
@@ -273,12 +273,12 @@ struct LoggerMiddleware<Action: Actionable, State: Statable>: MiddlewareType, Se
     func process(
         action: Action,
         state: State,
-        next: @escaping @concurrent @Sendable (Action) async -> Void
+        dispatch: @escaping DispatchClosure<Action>
     ) async {
 #if DEBUG
         print("[Store] ▶ \(action)")
 #endif
-        // Logger never calls next() — it has no follow-up actions to dispatch.
+        // Logger never calls dispatch() — it has no follow-up actions to schedule.
     }
 }
 ```
@@ -297,13 +297,13 @@ store.dispatch(.createTapped(title: "Buy milk"))
         │     (then, concurrently:)
         │
         ├──▶  TaskMiddleware     → await api.createTask(...)
-        │                           await next(.taskCreated(task))
+        │                           await dispatch(.taskCreated(task))
         │
         ├──▶  AnalyticsMiddleware → await tracker.track("task_create_tapped", ...)
-        │                           (no next call)
+        │                           (no dispatch call)
         │
         └──▶  LoggerMiddleware   → print("[Store] ▶ createTapped(title: "Buy milk")")
-                                    (no next call)
+                                    (no dispatch call)
 ```
 
 A slow network call in `TaskMiddleware` never blocks `AnalyticsMiddleware` or `LoggerMiddleware` — they complete independently.
@@ -599,9 +599,9 @@ store.dispatch(.createTapped(title: "New Task"))
     ├──▶  TaskReducer.reduce(.createTapped, &state)
     │         state.isLoading = true          → loading overlay appears
     │
-    └──▶  TaskMiddleware.process(.createTapped, state, next)
+    └──▶  TaskMiddleware.process(.createTapped, state, dispatch)
               await api.createTask(...)
-              await next(.taskCreated(task))
+              await dispatch(.taskCreated(task))
                   │
                   ├──▶  TaskReducer.reduce(.taskCreated(task), &state)
                   │         state.tasks.append(task)
@@ -624,7 +624,7 @@ store.dispatch(.searchChanged("buy"))
     └──▶  TaskMiddleware: taskManager.run(key: "search") { sleep(300ms); fetchTasks() }
               — first two tasks are cancelled before they wake —
               — third fires after 300ms of no new keystrokes —
-              await next(.tasksLoaded([...]))
+              await dispatch(.tasksLoaded([...]))
 ```
 
 The reducer keeps the UI responsive on every keystroke (instant local filter via `filteredTasks`). The middleware debounces the API call so the server is only hit once after the user pauses.

@@ -80,7 +80,7 @@ Computed properties on state are just functions of their inputs. Test them by se
 
 ## Testing middleware
 
-Middleware is an async function that receives an action, optional state, and a `next` closure. Test it by passing a mock `next` and asserting what gets dispatched.
+Middleware is an async function that receives an action, the current state, and a `dispatch` closure. Test it by passing a mock `dispatch` closure and asserting what gets dispatched.
 
 ```swift
 @Suite struct TaskMiddlewareTests {
@@ -90,9 +90,9 @@ Middleware is an async function that receives an action, optional state, and a `
         let middleware = TaskMiddleware(api: api)
 
         var dispatched: [TaskAction] = []
-        let next: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
+        let dispatch: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
 
-        await middleware.process(action: .appeared, state: TaskState(), next: next)
+        await middleware.process(action: .appeared, state: TaskState(), dispatch: dispatch)
 
         #expect(dispatched.count == 1)
         guard case .tasksLoaded(let tasks) = dispatched[0] else {
@@ -107,12 +107,12 @@ Middleware is an async function that receives an action, optional state, and a `
         let middleware = TaskMiddleware(api: api)
 
         var dispatched: [TaskAction] = []
-        let next: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
+        let dispatch: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
 
         await middleware.process(
             action: .createTapped(title: "Buy milk"),
             state: TaskState(),
-            next: next
+            dispatch: dispatch
         )
 
         #expect(dispatched == [.taskCreated(newTask)])
@@ -123,9 +123,9 @@ Middleware is an async function that receives an action, optional state, and a `
         let middleware = TaskMiddleware(api: api)
 
         var dispatched: [TaskAction] = []
-        let next: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
+        let dispatch: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
 
-        await middleware.process(action: .appeared, state: TaskState(), next: next)
+        await middleware.process(action: .appeared, state: TaskState(), dispatch: dispatch)
 
         guard case .failed = dispatched.first else {
             Issue.record("Expected failed action"); return
@@ -136,7 +136,7 @@ Middleware is an async function that receives an action, optional state, and a `
 
 ### When middleware must not dispatch
 
-Some middleware (analytics, logging) never calls `next`. Assert the dispatch list stays empty:
+Some middleware (analytics, logging) never calls `dispatch`. Assert the dispatch list stays empty:
 
 ```swift
 @Test func analyticsMiddlewareNeverDispatchesActions() async {
@@ -144,9 +144,9 @@ Some middleware (analytics, logging) never calls `next`. Assert the dispatch lis
     let middleware = AnalyticsMiddleware(tracker: tracker)
 
     var dispatched: [TaskAction] = []
-    let next: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
+    let dispatch: @Sendable (TaskAction) async -> Void = { dispatched.append($0) }
 
-    await middleware.process(action: .appeared, state: TaskState(), next: next)
+    await middleware.process(action: .appeared, state: TaskState(), dispatch: dispatch)
 
     #expect(dispatched.isEmpty)
     #expect(tracker.trackedEvents == ["task_list_viewed"])
@@ -161,7 +161,7 @@ Some middleware (analytics, logging) never calls `next`. Assert the dispatch lis
 |---|---|
 | Reducer | Nothing — pure function, construct state directly |
 | Computed state | Nothing — set up the relevant state fields |
-| Middleware | External dependencies (API clients, repositories). Pass a real `next` closure. |
+| Middleware | External dependencies (API clients, repositories). Pass a real `dispatch` closure. |
 | View | Nothing — test reducers and middleware in isolation instead |
 
 Mock only the I/O boundary (network, disk, system clock). Everything inside the Redux layer is a pure function or a deterministic async operation — mock-free by design.

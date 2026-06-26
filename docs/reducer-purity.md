@@ -98,10 +98,10 @@ struct FeedReducer: ReducerType {
 final class FeedMiddleware: MiddlewareType, @unchecked Sendable {
     let userRepo: UserRepository
 
-    func process(action: FeedAction, state: FeedState, next: ...) async {
+    func process(action: FeedAction, state: FeedState, dispatch: ...) async {
         if case .appeared = action {
             let user = await userRepo.currentUser()
-            await next(.userLoaded(user))
+            await dispatch(.userLoaded(user))
         }
     }
 }
@@ -148,10 +148,10 @@ struct AppState: Statable {
 struct FeatureFlagMiddleware: MiddlewareType, Sendable {
     let flagService: FlagService
 
-    func process(action: AppAction, state: AppState, next: ...) async {
+    func process(action: AppAction, state: AppState, dispatch: ...) async {
         if case .appLaunched = action {
             let flags = await flagService.fetch()
-            await next(.flagsLoaded(flags))
+            await dispatch(.flagsLoaded(flags))
         }
     }
 }

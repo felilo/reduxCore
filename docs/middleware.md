@@ -14,7 +14,7 @@ struct SearchMiddleware: MiddlewareType, CancellableTask, Sendable {
     func process(
         action: SearchAction,
         state: SearchState,
-        next: @escaping @concurrent @Sendable (SearchAction) async -> Void
+        dispatch: @escaping DispatchClosure<SearchAction>
     ) async {
         guard case .queryChanged(let query) = action else { return }
 
@@ -28,7 +28,7 @@ struct SearchMiddleware: MiddlewareType, CancellableTask, Sendable {
             }
 
             let results = (try? await self.api.search(query)) ?? []
-            await next(.resultsLoaded(results))
+            await dispatch(.resultsLoaded(results))
         }
     }
 }

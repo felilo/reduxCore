@@ -272,11 +272,11 @@ struct SearchMiddleware: MiddlewareType, Sendable {
     func process(
         action: SearchAction,
         state: SearchState,
-        next: @escaping @concurrent @Sendable (SearchAction) async -> Void
+        dispatch: @escaping DispatchClosure<SearchAction>
     ) async {
         guard case .queryChanged(let query) = action else { return }
         let results = (try? await api.search(query)) ?? []
-        await next(.resultsLoaded(results))
+        await dispatch(.resultsLoaded(results))
     }
 }
 ```
