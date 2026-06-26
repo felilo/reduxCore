@@ -119,4 +119,94 @@ struct ObservableStoreTests {
 
         #expect(store.state == storable.state)
     }
+
+    // MARK: - cancel
+
+    @Test("cancel() stops in-flight middleware tasks")
+    func cancelStopsInflightTasks() async throws {
+        let slow = AsyncMiddleware(delay: .milliseconds(500), nextAction: .setValue(99))
+        let storable = Storable(reducer: TestReducer(), middleware: [AnyMiddleware(slow)])
+        let store = ObservableStore(store: storable)
+
+        store.dispatch(.increment)
+        store.cancel()
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Middleware was cancelled before it could dispatch .setValue(99)
+        #expect(store.state.count == 1)
+    }
+
+    @Test("dispatch continues to work after cancel()")
+    func dispatchWorksAfterCancel() {
+        let storable = Storable(reducer: TestReducer())
+        let store = ObservableStore(store: storable)
+
+        store.dispatch(.increment)
+        store.cancel()
+        store.dispatch(.setValue(42))
+
+        #expect(store.state.count == 42)
+    }
+
+    // MARK: - dispatchAsync
+
+    @Test("dispatchAsync updates observable state before returning")
+    func dispatchAsyncUpdatesObservableState() async {
+        let storable = Storable(reducer: TestReducer())
+        let store = ObservableStore(store: storable)
+
+        await store.dispatchAsync(.increment)
+
+        #expect(store.state.count == 1)
+    }
+
+    @Test("dispatchAsync keeps ObservableStore and Storable state in sync")
+    func dispatchAsyncKeepsStatesInSync() async {
+        let storable = Storable(reducer: TestReducer())
+        let store = ObservableStore(store: storable)
+
+        await store.dispatchAsync(.setValue(42))
+
+        #expect(store.state == storable.state)
+    }
+
+    @Test("dispatchAsync suspends until middleware completes — no sleep needed")
+    func dispatchAsyncSuspendsUntilMiddlewareCompletes() async {
+        let spy = SpyMiddleware()
+        let storable = Storable(reducer: TestReducer(), middleware: [AnyMiddleware(spy)])
+        let store = ObservableStore(store: storable)
+
+        await store.dispatchAsync(.increment)
+
+        // No Task.sleep required — dispatchAsync guarantees middleware has run
+        #expect(spy.receivedActions == [.increment])
+        #expect(spy.receivedStates.first?.count == 1)
+    }
+
+    @Test("dispatchAsync: follow-up action from middleware is reflected in observable state")
+    func dispatchAsyncFollowUpActionReflectedInObservableState() async {
+        let spy = SpyMiddleware(nextAction: .setValue(100))
+        let storable = Storable(reducer: TestReducer(), middleware: [AnyMiddleware(spy)])
+        let store = ObservableStore(store: storable)
+
+        await store.dispatchAsync(.increment)
+
+        // Middleware dispatched .setValue(100) → reducer ran → onStateChange fired
+        #expect(store.state.count == 100)
+        #expect(store.state == storable.state)
+    }
+
+    @Test("dispatchAsync: multiple sequential calls accumulate state correctly")
+    func dispatchAsyncMultipleCallsAccumulate() async {
+        let storable = Storable(reducer: TestReducer())
+        let store = ObservableStore(store: storable)
+
+        await store.dispatchAsync(.increment)
+        await store.dispatchAsync(.increment)
+        await store.dispatchAsync(.decrement)
+
+        #expect(store.state.count == 1)
+        #expect(store.state == storable.state)
+    }
 }

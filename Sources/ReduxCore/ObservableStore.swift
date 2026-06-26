@@ -103,3 +103,29 @@ where TReducer.Action: Equatable & Sendable, TReducer.State: Equatable & Sendabl
         ScopedStore(parent: self, state: toChildState, action: fromChildAction)
     }
 }
+
+// MARK: - Async dispatch
+
+public extension ObservableStore {
+
+    /// Dispatches an action and suspends until all middleware have finished processing it.
+    ///
+    /// Use this with SwiftUI primitives that require an awaitable async closure,
+    /// such as `.refreshable`, where the spinner must stay visible while async
+    /// middleware work is in progress.
+    ///
+    /// The Redux flow remains unchanged — the action still goes through the
+    /// reducer and all middleware as usual. The only addition is that the caller
+    /// suspends until the first round of middleware completes.
+    ///
+    /// ```swift
+    /// .refreshable {
+    ///     await store.dispatchAsync(.refresh)
+    /// }
+    /// ```
+    ///
+    /// - Parameter action: The action to dispatch.
+    func dispatchAsync(_ action: TReducer.Action) async {
+        await store.dispatchAsync(action)
+    }
+}

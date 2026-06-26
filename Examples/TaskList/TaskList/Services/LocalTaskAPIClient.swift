@@ -36,7 +36,7 @@ actor LocalTaskAPIClient: TaskAPIClient {
     ]
 
     func fetchTasks() async throws -> [TaskItem] {
-        try await Task.sleep(for: .milliseconds(800))
+        try await Task.sleep(for: .milliseconds(1800))
         return tasks
     }
 

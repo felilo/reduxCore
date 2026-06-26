@@ -99,4 +99,10 @@ where ParentReducer.Action: Equatable & Sendable, ParentReducer.State: Equatable
     public func dispatch(_ action: ChildAction) {
         parentStore.dispatch(actionMapper(action))
     }
+
+    /// Async variant: dispatches a child action and suspends until all middleware finish.
+    /// Useful with `.refreshable` on child views that own a scoped store.
+    public func dispatchAsync(_ action: ChildAction) async {
+        await parentStore.dispatchAsync(actionMapper(action))
+    }
 }

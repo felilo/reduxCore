@@ -58,7 +58,8 @@ struct TaskListScreen: View {
                 filteredTasks: state.filteredTasks,
                 searchQuery: state.searchQuery,
                 onTaskTapped: { store.dispatch(.navigate(to: .detail($0))) },
-                onTaskDeleted: { store.dispatch(.deleteTapped(id: $0.id)) }
+                onTaskDeleted: { store.dispatch(.deleteTapped(id: $0.id)) },
+                onRefresh: { await store.dispatchAsync(.appeared) }
             )
             .navigationTitle("Tasks")
             .searchable(
@@ -113,40 +114,6 @@ struct TaskListScreen: View {
             .background(.regularMaterial)
             .opacity(isLoading ? 1 : 0)
             .animation(.default, value: isLoading)
-    }
-}
-
-// MARK: - Content View
-
-private struct TaskContentView: View {
-    let filteredTasks: [TaskItem]
-    let searchQuery: String
-    let onTaskTapped: (TaskItem) -> Void
-    let onTaskDeleted: (TaskItem) -> Void
-
-    var body: some View {
-        List {
-            ForEach(filteredTasks) { task in
-                TaskRowView(
-                    task: task,
-                    onTap: { onTaskTapped(task) },
-                    onDelete: { onTaskDeleted(task) }
-                )
-            }
-        }
-        .overlay {
-            if filteredTasks.isEmpty {
-                ContentUnavailableView(
-                    searchQuery.isEmpty ? "No Tasks" : "No Results",
-                    systemImage: searchQuery.isEmpty ? "checklist" : "magnifyingglass",
-                    description: Text(
-                        searchQuery.isEmpty
-                            ? "Tap + to add your first task."
-                            : "No tasks match \"\(searchQuery)\"."
-                    )
-                )
-            }
-        }
     }
 }
 

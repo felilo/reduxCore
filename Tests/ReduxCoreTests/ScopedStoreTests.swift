@@ -153,6 +153,35 @@ struct ScopedStoreTests {
         let _ = callCount
     }
 
+    // MARK: - dispatchAsync
+
+    @Test("dispatchAsync maps child action and suspends until middleware completes")
+    func dispatchAsyncMapsAndSuspends() async {
+        let spy = SpyMiddleware()
+        let storable = Storable(reducer: TestReducer(), middleware: [AnyMiddleware(spy)])
+        let parent = ObservableStore(store: storable)
+        let scoped = parent.scope(state: \.count, action: { (a: TestAction) in a })
+
+        await scoped.dispatchAsync(.setValue(33))
+
+        // No sleep needed — dispatchAsync suspends until middleware is done
+        #expect(spy.receivedActions == [.setValue(33)])
+        #expect(scoped.state == 33)
+        #expect(parent.state.count == 33)
+    }
+
+    @Test("dispatchAsync on scoped store updates both child and parent state")
+    func dispatchAsyncUpdatesBothStates() async {
+        let storable = Storable(reducer: TestReducer())
+        let parent = ObservableStore(store: storable)
+        let scoped = parent.scope(state: \.count, action: { (a: TestAction) in a })
+
+        await scoped.dispatchAsync(.increment)
+
+        #expect(scoped.state == 1)
+        #expect(parent.state.count == 1)
+    }
+
     @Test("creating and releasing many scoped stores does not accumulate observers")
     func observersDontAccumulate() {
         let storable = Storable(reducer: TestReducer())

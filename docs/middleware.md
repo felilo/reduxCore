@@ -133,6 +133,51 @@ StoreContainerView(reducer: SearchReducer()) {
 
 ---
 
+## Awaitable dispatch — `.refreshable` and async contexts
+
+`dispatch` is fire-and-forget: it applies the reducer synchronously and schedules middleware in an unstructured `Task`. The caller returns immediately — the middleware is still running.
+
+This is fine for most interactions, but SwiftUI's `.refreshable` modifier expects an `async` closure that only returns when the work is done. If you use plain `dispatch`, the spinner dismisses the moment `dispatch` returns, before any network call completes.
+
+Use `dispatchAsync` instead. It applies the reducer synchronously, then **suspends until all first-level middleware complete**:
+
+```swift
+// ❌ Spinner dismisses immediately — middleware still running
+.refreshable {
+    store.dispatch(.refresh)
+}
+
+// ✅ Spinner stays visible until middleware finishes
+.refreshable {
+    await store.dispatchAsync(.refresh)
+}
+```
+
+`dispatchAsync` is available on `ObservableStore`, `ScopedStore`, and `Storable`. It behaves identically to `dispatch` in every other respect — the action goes through the reducer and all middleware, `onStateChange` fires, and the resulting state is observable.
+
+### Cancellation
+
+`dispatchAsync` tasks are tracked in `inflightTasks` alongside regular `dispatch` tasks, so `cancel()` and store deallocation cancel them correctly. If the caller's `Task` is cancelled (e.g. the view is dismissed mid-refresh), the middleware task is also cancelled cooperatively via `withTaskCancellationHandler`.
+
+### ScopedStore
+
+`dispatchAsync` is available on `ScopedStore` as well, mapping the child action to the parent before suspending:
+
+```swift
+struct FeedView: View {
+    let store: ScopedStore<HomeReducer, FeedState, FeedAction>
+
+    var body: some View {
+        List { ... }
+            .refreshable {
+                await store.dispatchAsync(.refresh)
+            }
+    }
+}
+```
+
+---
+
 ## Cycle detection
 
 The store ships two built-in cycle detectors. Both are diagnostic-only — they never drop or delay a dispatch.

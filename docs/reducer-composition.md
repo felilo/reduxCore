@@ -187,7 +187,7 @@ struct FeedView: View {
             PostRow(post: post)
                 .onTapGesture { store.dispatch(.postLiked(post.id)) }
         }
-        .refreshable { store.dispatch(.refresh) }
+        .refreshable { await store.dispatchAsync(.refresh) }
     }
 }
 ```

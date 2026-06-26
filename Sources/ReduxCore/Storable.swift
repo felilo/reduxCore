@@ -225,3 +225,49 @@ where TReducer.Action: Equatable & Sendable, TReducer.State: Equatable & Sendabl
         }
     }
 }
+
+
+extension Storable {
+    
+    public func dispatchAsync(_ action: TReducer.Action) async {
+#if DEBUG
+        // Sync depth detection: limits re-entrant chains such as onStateChange → dispatch.
+        // The defer must live here in dispatch (not in a helper) so the counter stays
+        // elevated throughout the entire synchronous re-entrant call stack.
+        currentDispatchDepth += 1
+        defer { currentDispatchDepth -= 1 }
+        guard currentDispatchDepth <= maxDispatchDepth else {
+            print("[ReduxCore] ⚠️ Max dispatch depth (\(maxDispatchDepth)) exceeded. Breaking potential cycle for action: \(action)")
+            return
+        }
+        detectAsyncCycle(action)
+#endif
+        // Reduce synchronously — state is mutated in place on the main actor.
+        reducer.reduce(action: action, state: &state)
+        
+        guard !middleware.isEmpty else { return }
+        
+        // Capture the state value at this point in time so each middleware
+        // sees a consistent snapshot even if dispatch is called again before
+        // the Task runs.
+        let capturedState = state
+        
+        let handle = TaskHandle { [weak self] in
+            guard let self else { return }
+            await self.runMiddleware(action, state: capturedState)
+        }
+
+        // Track in inflightTasks so cancel() / deinit can also cancel this task.
+        inflightTasks.append(handle)
+
+        // Propagate structured cancellation: if the caller's Task is cancelled
+        // (e.g. the .refreshable Task is dismissed), cancel the middleware task too.
+        await withTaskCancellationHandler(operation: {
+            await handle.task.value
+        }, onCancel: {
+            handle.cancel()
+        })
+
+        removeFinishedTasks()
+    }
+}
